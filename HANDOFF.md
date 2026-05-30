@@ -12,7 +12,7 @@
   - which resolves to `/Users/yishengj/wowaddons/Interface/Addons`
 
 There is also a convenience symlink at `/Users/yishengj/wowaddons/Addons -> Interface/Addons`.
-It is ignored by Git, along with the accidental nested mirror at `Interface/Addons/Addons/`.
+It is ignored by Git.
 
 ## Backup
 
@@ -66,7 +66,7 @@ Git hygiene:
 
 - `21ff04b Ignore addon mirror symlinks`
 
-`.gitignore` ignores the root `Addons` symlink and the nested `Interface/Addons/Addons/` mirror so future commits focus on the live tracked addon tree.
+`.gitignore` ignores the root `Addons` symlink so future commits focus on the live tracked addon tree.
 
 ## Notes
 
@@ -74,4 +74,5 @@ Git hygiene:
 - Commit from `/Users/yishengj/wowaddons`.
 - Always update `HANDOFF.md` when making repo or addon fixes so the next agent has current context.
 - Follow `agent.md` for repository-specific operating notes.
+- Removed the accidental nested addon mirror at `Interface/Addons/Addons/`.
 - As of the font fix, `/reload` confirmed the recurring font error is fixed.

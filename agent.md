@@ -20,5 +20,4 @@
 ## Current Caveats
 
 - `/Users/yishengj/wowaddons/Addons` is a convenience symlink to `Interface/Addons` and is ignored by Git.
-- `Interface/Addons/Addons/` is an accidental nested mirror and is ignored by Git.
 - Use `/reload` in WoW to validate Lua fixes after editing live addon files.
