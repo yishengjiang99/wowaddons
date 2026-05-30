@@ -6,10 +6,8 @@ local Lib = LibStub:NewLibrary("LibBonusId", 1) ---@class LibBonusId
 if not Lib then return end
 local private = {
 	data = nil, ---@type BonusIdData
-	squishMax = nil,
 	bonusIdsTemp = {}, ---@type number[]
-	bonusesTemp = {}, ---@type BonusEntry[]
-	filterTemp = {}, ---@type number[]
+	bonusesTemp = {}, ---@type BonusEntry[]|table<string,number>
 }
 local DATA_VERSION = 2
 local OP_GROUP = { scale = "level", set = "level", add = "add" }
@@ -153,6 +151,7 @@ end
 function Lib.CalculateItemLevelFromItemLink(link)
 	assert(not next(private.bonusIdsTemp))
 	local itemId, modifierDropLevel, modifierContentTuningId = private.ParseLink(link, private.bonusIdsTemp)
+	assert(itemId)
 	return private.Calculate(itemId, modifierDropLevel, modifierContentTuningId)
 end
 
@@ -171,6 +170,7 @@ function private.ParseLink(link, bonusIds)
 	local itemId = tonumber(itemIdStr)
 	local dropLevel, contentTuningId = nil, nil
 	local numBonusIds, numModifiers, modifierOffset, currentModifierType = nil, nil, nil, nil
+	---@correlated numModifiers, modifierOffset
 	for part in gmatch(bonusModiferStr, "(%d*):") do
 		part = tonumber(part)
 		if not numBonusIds then
@@ -255,8 +255,9 @@ function private.Calculate(itemId, modifierDropLevel, modifierContentTuningId)
 			local dropLevel = bonus.defaultLevel or modifierDropLevel or DEFAULT_DROP_LEVEL
 			if not bonus.defaultLevel and bonus.contentTuningKey and (not bonus.contentTuningDefaultOnly or not modifierDropLevel) then
 				local contentTuningId = modifierContentTuningId or bonus.contentTuningId
-				dropLevel = private.ApplyContentTuning(dropLevel, contentTuningId, bonus.contentTuningKey)
+				dropLevel = contentTuningId and private.ApplyContentTuning(dropLevel, contentTuningId, bonus.contentTuningKey) or dropLevel
 			end
+			assert(bonus.curveId)
 			itemLevel = private.GetCurveValue(bonus.curveId, dropLevel) + (bonus.offset or 0)
 		else
 			error("Unknown bonus op: "..tostring(op))

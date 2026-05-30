@@ -75,4 +75,5 @@ Git hygiene:
 - Always update `HANDOFF.md` when making repo or addon fixes so the next agent has current context.
 - Follow `agent.md` for repository-specific operating notes.
 - Removed the accidental nested addon mirror at `Interface/Addons/Addons/`.
+- Added `docs/auctionator-overview.md`, a semi-detailed local-code overview of Auctionator.
 - As of the font fix, `/reload` confirmed the recurring font error is fixed.
