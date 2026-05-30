@@ -1,0 +1,129 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Script File="WarbandTax.lua"/>
+	<Frame name="WarbandTaxEventFrame">
+		<Scripts>
+			<OnLoad>
+				WarbandTax_OnLoad(self);
+			</OnLoad>
+			<OnEvent function="WarbandTax_OnEvent"/>
+		</Scripts>
+	</Frame>
+	<Frame name="WarbandTaxConfigFrame" parent="UIParent" inherits="UIPanelDialogTemplate" hidden="true" movable="true">
+		<Size x="500" y="280"/>
+		<Anchors><Anchor point="CENTER"/></Anchors>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString name="$parentTitle" inherits="GameFontNormalLarge" text="WarbandTax Configuration">
+					<Anchors><Anchor point="TOP" x="0" y="-30"/></Anchors>
+				</FontString>
+				<!-- Global Tax Percentage -->
+				<FontString name="$parentGlobalTaxLabel" inherits="GameFontNormal" text="Global Default Tax:">
+					<Anchors><Anchor point="TOPLEFT" x="20" y="-50"/></Anchors>
+				</FontString>
+				<!-- Character Tax Percentage -->
+				<FontString name="$parentTaxLabel" inherits="GameFontNormal" text="Character Tax:">
+					<Anchors><Anchor point="TOPLEFT" x="20" y="-75"/></Anchors>
+				</FontString>
+				<!-- Verbose Label -->
+				<FontString name="$parentVerboseLabel" inherits="GameFontNormal" text="Verbose">
+					<Anchors><Anchor point="TOPLEFT" x="50" y="-105"/></Anchors>
+				</FontString>
+				<!-- Current Tax Due -->
+				<FontString name="$parentDueLabel" inherits="GameFontNormal" text="Current accumulated value:">
+					<Anchors><Anchor point="TOPLEFT" x="20" y="-135"/></Anchors>
+				</FontString>
+				<FontString name="$parentDueValue" inherits="GameFontNormal">
+					<Anchors><Anchor point="LEFT" relativeTo="$parentDueLabel" relativePoint="RIGHT" x="10" y="0"/></Anchors>
+				</FontString>
+				<!-- Total Paid -->
+				<FontString name="$parentPaidLabel" inherits="GameFontNormal" text="Total donated:">
+					<Anchors><Anchor point="TOPLEFT" x="20" y="-155"/></Anchors>
+				</FontString>
+				<FontString name="$parentPaidValue" inherits="GameFontNormal">
+					<Anchors><Anchor point="LEFT" relativeTo="$parentPaidLabel" relativePoint="RIGHT" x="10" y="0"/></Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<Frames>
+			<!-- Global Tax Percentage -->
+			<EditBox name="$parentGlobalTaxEdit" inherits="InputBoxTemplate">
+				<Size x="50" y="20"/>
+				<Anchors><Anchor point="LEFT" relativeTo="$parentGlobalTaxLabel" relativePoint="RIGHT" x="10" y="0"/></Anchors>
+				<Scripts>
+					<OnEnterPressed><![CDATA[
+						local value = tonumber(self:GetText())
+						if value and value == math.floor(value) and value >= 0 and value <= 100 then
+							WarbandTaxPercentageGlobal = value
+							self:SetText(format("%d", value))
+							print(format("|cffFF7C0AWT|r: Global default tax changed to %d%%", value))
+							self:GetParent():Hide()
+							WT_ShowConfig()
+						else
+							print("|cffFF7C0AWT|r: Invalid tax percentage. Enter an integer from 0 to 100.")
+						end
+						self:ClearFocus()
+					]]></OnEnterPressed>
+				</Scripts>
+			</EditBox>
+			<!-- Character Tax Percentage -->
+			<EditBox name="$parentTaxEdit" inherits="InputBoxTemplate">
+				<Size x="50" y="20"/>
+				<Anchors><Anchor point="LEFT" relativeTo="$parentTaxLabel" relativePoint="RIGHT" x="10" y="0"/></Anchors>
+				<Scripts>
+					<OnEnterPressed><![CDATA[
+						local value = tonumber(self:GetText())
+						if value and value == math.floor(value) and value >= 0 and value <= 100 then
+							WarbandTaxPercentage = value
+							self:SetText(format("%d", value))
+							print(format("|cffFF7C0AWT|r: Character tax changed to %d%%", value))
+							self:GetParent():Hide()
+							WT_ShowConfig()
+						else
+							print("|cffFF7C0AWT|r: Invalid tax percentage. Enter an integer from 0 to 100.")
+						end
+						self:ClearFocus()
+					]]></OnEnterPressed>
+				</Scripts>
+			</EditBox>
+			<!-- Reset to Default Button -->
+			<Button name="$parentResetButton" inherits="UIPanelButtonTemplate" text="Reset to Global Default">
+				<Size x="150" y="20"/>
+				<Anchors><Anchor point="LEFT" relativeTo="$parentTaxEdit" relativePoint="RIGHT" x="10" y="0"/></Anchors>
+				<Scripts>
+					<OnClick><![CDATA[
+						WarbandTaxPercentage = WarbandTaxPercentageGlobal
+						print(format("|cffFF7C0AWT|r: Character tax reset to global default: %d%%", WarbandTaxPercentage))
+						self:GetParent():Hide()
+						WT_ShowConfig()
+					]]></OnClick>
+				</Scripts>
+			</Button>
+			<!-- Verbose/Quiet -->
+			<CheckButton name="$parentVerboseCheck" inherits="UICheckButtonTemplate">
+				<Anchors><Anchor point="TOPLEFT" x="20" y="-105"/></Anchors>
+				<Scripts>
+					<OnClick><![CDATA[
+						WarbandQuietMode = self:GetChecked() and 0 or 1
+						print(format("|cffFF7C0AWT|r: %s mode enabled.", WarbandQuietMode == 0 and "Verbose" or "Quiet"))
+					]]></OnClick>
+				</Scripts>
+			</CheckButton>
+		</Frames>
+		<Scripts>
+			<OnLoad><![CDATA[
+				self:SetMovable(true)
+				self:EnableMouse(true)
+				self:RegisterForDrag("LeftButton")
+			]]></OnLoad>
+			<OnDragStart><![CDATA[self:StartMoving()]]></OnDragStart>
+			<OnDragStop><![CDATA[self:StopMovingOrSizing()]]></OnDragStop>
+			<OnShow><![CDATA[
+				_G["WarbandTaxConfigFrameGlobalTaxEdit"]:SetText(format("%d", WarbandTaxPercentageGlobal))
+				_G["WarbandTaxConfigFrameTaxEdit"]:SetText(format("%d", WarbandTaxPercentage))
+				_G["WarbandTaxConfigFrameVerboseCheck"]:SetChecked(WarbandQuietMode == 0)
+				_G["WarbandTaxConfigFrameDueValue"]:SetText(GetCoinText(WarbandTaxDue))
+				_G["WarbandTaxConfigFramePaidValue"]:SetText(GetCoinText(WarbandTaxToDate))
+			]]></OnShow>
+		</Scripts>
+	</Frame>
+</Ui>

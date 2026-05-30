@@ -1,0 +1,7 @@
+## Interface: 110000
+## Title: Arena Target Tracker
+## Notes: Displays number of arena opponents targeting you next to raid frame
+## Author: Grok
+## Version: 1.0
+
+ArenaTargetTtracker.lua

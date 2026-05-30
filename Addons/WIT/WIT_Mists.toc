@@ -1,0 +1,25 @@
+## Interface: 50502
+## Title: |c00ffff00WorthIt|r
+## Author: DALAGG
+## Version: v4.3.1
+## DefaultState: enabled
+## SavedVariables: WITDB
+## OptionalDeps: TradeSkillMaster, Auctionator, OribosExchange, Routes, TomTom, Scrap
+## IconTexture: Interface\AddOns\WIT\Images\Icons\logo
+
+Libs\Libs.xml
+
+Locale\Locale.xml
+Enums\Enums.xml
+Enums\retail\Enums.xml
+Data\Data_shared.xml
+Data\classic_mop\Data.xml
+Utilities\Utilities.xml
+Core.lua
+Config\ProductConfig_classic_mop.lua
+Config\Config.lua
+Modules\Modules_shared.xml
+Modules\classic_mop\Modules.xml
+UI\UI.xml
+API\API.lua
+Console.lua

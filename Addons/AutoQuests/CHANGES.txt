@@ -1,0 +1,16 @@
+lightweight tag 670436d38cc32346dea255f9ed65a4c7b38c06d8 2.6.0
+Author:	unverz06 <>
+Date:	Sun Feb 1 10:34:16 2026 +0100
+
+commit 670436d38cc32346dea255f9ed65a4c7b38c06d8
+Author: unverz06 <>
+Date:   Sun Feb 1 10:34:16 2026 +0100
+
+    chore(): version and add fiote to contribs
+
+commit b6df11357de5072ec3710f2c19a3c42592a62f9b
+Author: fiote <murilo.eng@gmail.com>
+Date:   Tue Jan 27 16:20:53 2026 -0300
+
+    feat(): adding new feature for auto-selecting repeatable quests
+

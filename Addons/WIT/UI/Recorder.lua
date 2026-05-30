@@ -1,0 +1,1239 @@
+local WIT, core = ...
+
+local AceGUI = LibStub("AceGUI-3.0")
+
+local ITEM_LINK_REGEX = "(.+)"
+local ITEM_ID_REGEX = "(.+)Hitem:([0-9]+):(.+)"
+local LOOT_ITEM_SELF_REGEX = LOOT_ITEM_SELF:gsub("%%s", ITEM_LINK_REGEX)
+local LOOT_ITEM_SELF_MULTIPLE_REGEX = LOOT_ITEM_SELF_MULTIPLE:gsub("%%s", ITEM_LINK_REGEX):gsub("%%d", "(%%d+)")
+local LOOT_ITEM_PUSHED_SELF_REGEX = LOOT_ITEM_PUSHED_SELF:gsub("%%s", ITEM_LINK_REGEX)
+local LOOT_ITEM_PUSHED_SELF_MULTIPLE_REGEX = LOOT_ITEM_PUSHED_SELF_MULTIPLE:gsub("%%s", ITEM_LINK_REGEX):gsub("%%d", "(%%d+)")
+local LOOT_ITEM_SELF_ITEMID_REGEX = LOOT_ITEM_SELF:gsub("%%s", ITEM_ID_REGEX)
+local LOOT_ITEM_SELF_ITEMID_MULTIPLE_REGEX = LOOT_ITEM_SELF_MULTIPLE:gsub("%%s", ITEM_ID_REGEX):gsub("%%d", "(%%d+)")
+local LOOT_ITEM_PUSHED_SELF_ITEMID_REGEX = LOOT_ITEM_PUSHED_SELF:gsub("%%s", ITEM_ID_REGEX)
+local LOOT_ITEM_PUSHED_SELF_ITEMID_MULTIPLE_REGEX = LOOT_ITEM_PUSHED_SELF_MULTIPLE:gsub("%%s", ITEM_ID_REGEX):gsub("%%d", "(%%d+)")
+local LOOT_ITEM_REGEX = LOOT_ITEM:gsub("%%s", ITEM_LINK_REGEX)
+local LOOT_ITEM_MULTIPLE_REGEX = LOOT_ITEM_MULTIPLE:gsub("%%s", ITEM_LINK_REGEX):gsub("%%d", "(%%d+)")
+local LOOT_ITEM_ITEMID_REGEX = LOOT_ITEM:gsub("%%s", ITEM_LINK_REGEX, 1):gsub("%%s", ITEM_ID_REGEX)
+local LOOT_ITEM_ITEMID_MULTIPLE_REGEX = LOOT_ITEM_MULTIPLE:gsub("%%s", ITEM_LINK_REGEX, 1):gsub("%%s", ITEM_ID_REGEX):gsub("%%d", "(%%d+)")
+local BPET_ID_REGEX = "Hbattlepet:(%d+):"
+
+local GOLD_AMOUNT_REGEX = GOLD_AMOUNT:gsub("%%d", "(%%d+)")
+local SILVER_AMOUNT_REGEX = SILVER_AMOUNT:gsub("%%d", "(%%d+)")
+local COPPER_AMOUNT_REGEX = COPPER_AMOUNT:gsub("%%d", "(%%d+)")
+
+local self = nil
+local UpdateUI = nil
+local ReloadGrid = false
+
+local tradeSkillItemType = nil
+local weaponItemType = nil
+local armorItemType = nil
+local showInstanceResetTooltip = false
+
+local quickFilters = {
+    { Name = "Materials only", Value = 1 },
+    { Name = "Transmog only", Value = 2 }
+}
+
+function core.NewCustomFarmId()
+    return "C" .. string.format("%06d", math.random(1, 999999)) .. time()
+end
+
+function core.NewRecorderSession()
+    return {
+        Id = core.NewCustomFarmId(),
+        StartTime = nil,
+        Time = 0,
+        CurrentTime = nil,
+        IsRunning = false,
+        IsPaused = false,
+        NameMapId = core.LocationHelper.GetPlayerCurrentMapId(),
+        Mode = "location",
+        MapId = core.LocationHelper.GetPlayerCurrentMapId(),
+        Money = 0,
+        Notes = nil,
+        IsCustom = true,
+        Filter = nil,
+        Results = {}
+    }
+end
+
+local function GetCurrentDuration()
+    local seconds = self.Session.Time
+
+    if self.Session.IsRunning then
+        seconds = seconds + time() - self.Session.StartTime
+    end
+
+    return seconds
+end
+
+local function ResumeSession()
+    if not self.Session.IsRunning then
+        self.Session.IsRunning = true
+        self.Session.IsPaused = false
+
+        self.Session.StartTime = time()
+        self.Session.CurrentTime = self.Session.StartTime
+    end
+
+    UpdateUI()
+end
+
+local function PauseSession()
+    if self.Session.IsRunning then
+        self.Session.IsRunning = false
+        self.Session.IsPaused = true
+
+        self.Session.Time = self.Session.Time + time() - self.Session.StartTime
+        self.Session.StartTime = nil
+    end
+
+    UpdateUI()
+end
+
+local function StopSession()
+    self.Session.IsPaused = false
+
+    if self.Session.IsRunning then
+        self.Session.IsRunning = false
+
+        self.Session.Time = self.Session.Time + time() - self.Session.StartTime
+        self.Session.StartTime = nil
+    end
+
+    UpdateUI()
+end
+
+function core.GetCustomFarmName(farm)
+    return farm.Mode == "location" and core.LocationHelper.GetMapName(farm.NameMapId)
+        or farm.Mode == "item" and (farm.ItemLink or core.PriceSourceHelper.GetItemLink(farm.ItemId))
+        or farm.Name
+end
+
+local function SetResetInstancesButtonLabel()
+    self.UI.ResetInstancesButton:SetText(string.format(self.Mode == "Compact" and core.GetString("ResetAllInstancesButtonFormatCompact") or core.GetString("ResetAllInstancesButtonFormat"), #(core.Config.GetInstanceResets())))
+end
+
+local function SetResetInstancesButtonTooltip()
+    if not showInstanceResetTooltip then
+        return nil;
+    end
+
+    GameTooltip:ClearLines()
+    
+    local instanceResets = core.Config.GetInstanceResets()
+
+    GameTooltip:AddLine(string.format(core.GetString("ResetAllInstancesTooltip1Format"), #(instanceResets)))
+
+    if #(instanceResets) > 0 then
+        local currentTime = time()
+        local lastReset = currentTime
+
+        for _, instance in pairs(instanceResets) do
+            if lastReset > instance.start then
+                lastReset = instance.start
+            end
+        end
+
+        local t = lastReset - currentTime + (60*60)
+        local min = floor(t / 60)
+        local s = t - (min * 60)
+
+        GameTooltip:AddLine(string.format(core.GetString("ResetAllInstancesTooltip2Format"), min, s))
+    end
+
+    GameTooltip:AddLine(core.GetString("ResetAllInstancesTooltip3"))
+end
+
+UpdateUI = function()
+    local seconds = GetCurrentDuration()
+    local isFarmEnded = false
+    if self.Session.IsRunning and self.Session.Timer and self.Session.Timer <= seconds then
+        StopSession()
+        core.SoundHelper.Play(15757)
+        return
+    end
+
+    if self.Session.Timer then
+        seconds = self.Session.Timer - seconds
+        if seconds <= 0 then
+            isFarmEnded = true
+            seconds = GetCurrentDuration()
+        end
+    end
+
+    local hours = math.floor(seconds / 60 / 60)
+    seconds = seconds - hours * 60 * 60
+    local minutes = math.floor(seconds / 60)
+    seconds = seconds - minutes * 60
+
+    local timeResource = isFarmEnded and "FarmEndedFormat" or self.Session.Timer and "TimeLeftFormat" or "TimeLabelFormat"
+
+    self.UI.TimeLabel:SetText(string.format(core.GetString(timeResource), hours, minutes, seconds))
+    self.UI.TimeLabel:SetWidth(self.UI.TimeLabel.label:GetStringWidth() + 5)
+    self.UI.ButtonsPanel:DoLayout()
+
+    local location = ""
+
+    if self.Session.MapId then
+        location = core.LocationHelper.GetMapName(self.Session.MapId)
+    end
+
+    local name = core.GetCustomFarmName(self.Session)
+
+    self.UI.TitleLabel:SetText(string.format(core.GetString("NameLabelFormat"), name))
+
+    self.UI.LocationLabel:SetText(string.format(core.GetString("LocationLabelFormat"), location))
+
+    self.UI.MoneyLabel:SetText(string.format(core.GetString("RawGoldLabelFormat"), core.PriceSourceHelper.ToMoneyString(self.Session.Money)))
+
+    local itemValue = 0
+
+    for _, item in pairs(self.Session.Results) do
+        local unitPrice = core.PriceSourceHelper.GetItemPrice(item.Id == core.PriceSourceHelper.PetCageItemId and 'p:'.. item.PetId or item.Id) or 0
+        itemValue = itemValue + unitPrice * item.Quantity
+    end
+
+    self.UI.ItemValueLabel:SetText(string.format(core.GetString("ItemsValueLabelFormat"), core.PriceSourceHelper.ToMoneyString(itemValue)))
+    self.UI.TotalValueLabel:SetText(string.format(core.GetString(self.Mode == "Compact" and "TotalValueLabelFormatCompact" or "TotalValueLabelFormat"), core.PriceSourceHelper.ToMoneyString(itemValue + self.Session.Money)))
+    self.UI.IsGroupFarmCheckBox:SetValue(self.Session.IsGroupFarm or false)
+    self.UI.IsGroupFarmCheckBox:SetLabel(string.format(core.GetString(self.Session.IsGroupFarm and "TrackGroupLootPlayers" or "TrackGroupLoot"), self.Session.NumberOfPlayers or 1))
+
+    local route = self.Session.RouteZone ~= nil and {
+        Name = self.Session.RouteName,
+        Data = self.Session.RouteData,
+        Zone = { Id = self.Session.RouteZone, Name = C_Map.GetMapInfo(self.Session.RouteZone).name }
+    } or nil
+    self.UI.RoutePicker:SetValue(route)
+
+    if self.Session.Filter ~= self.UI.FilterPicker.Value then
+        self.UI.FilterPicker:SetValue(self.Session.Filter and quickFilters[self.Session.Filter] or nil)
+    end
+
+    self.UI.PlayButton:Toggle(not self.Session.IsRunning and not isFarmEnded)
+    self.UI.PauseButton:Toggle(self.Session.IsRunning)
+    self.UI.StopButton:Toggle(self.Session.IsRunning or self.Session.IsPaused)
+
+    if ReloadGrid and (not WITDB.Settings.Recorder.Mode or WITDB.Settings.Recorder.Mode == "Edit") then
+        self.UI.LootGrid.ClearCache()
+        self.UI.LootGrid.Reload()
+        ReloadGrid = false
+    end
+
+    local itemOfNote = core.Config.GetRecorderItemOfNote()
+    if (self.UI.ItemOfNote.Item and self.UI.ItemOfNote.Item.Id) ~= (itemOfNote and itemOfNote.Id) or self.Mode ~= self.UI.ItemOfNote.Mode then
+        local format = core.GetString(itemOfNote and self.Mode == "Compact" and "RecorderItemOfNoteLabelFormatCompact" or "RecorderItemOfNoteLabelFormat")
+        if itemOfNote then
+            local itemOfNoteLink = itemOfNote and itemOfNote.ItemLink or ''
+            local startOfName = strfind(itemOfNoteLink, "|h") + 1
+            local format = core.GetString(self.Mode == "Compact" and "RecorderItemOfNoteLabelFormatCompact" or "RecorderItemOfNoteLabelFormat")
+            local itemOfNotePrice = itemOfNote and core.PriceSourceHelper.GetItemPrice(itemOfNote.PetId and ('p:' .. itemOfNote.PetId) or itemOfNote.Id) or 0
+            local itemOfNotePriceString = core.PriceSourceHelper.ToMoneyString(itemOfNotePrice)
+
+            if self.Mode == "Compact" then
+                itemOfNotePriceString = strmatch(itemOfNotePriceString, '[^%s]*')
+            end
+
+            repeat
+                self.UI.ItemOfNote:SetText(string.format(format, itemOfNoteLink, itemOfNotePriceString))
+                itemOfNoteLink = strsub(itemOfNoteLink, 1, strlen(itemOfNoteLink) - 9) .. '...]|h|r'
+            until((self.UI.ItemOfNote.label:GetStringWidth() < self.UI.ItemOfNote.frame:GetWidth()) or (strlen(itemOfNoteLink) - 8 <= startOfName))
+        else
+            self.UI.ItemOfNote:SetText("")
+        end
+
+        self.UI.ItemOfNote.Item = itemOfNote
+        self.UI.ItemOfNote.Mode = self.Mode
+    end
+
+    self.SessionLastUpdated = time()
+end
+
+local function UpdateNotesLabel()
+    self.UI.NotesLabel:SetText(string.format(core.GetString("NotesLabelFormat"), self.Session.Notes and strlen(self.Session.Notes) > 0 and core.GetString("FarmHasNotes") or core.GetString("FarmDontHasNotes")))
+end
+
+local function ResetSession()
+    self.Session = core.NewRecorderSession()
+    core.Config.SetCurrentRecorderSession(self.Session)
+
+    if self.UI.LootGrid then
+        self.UI.LootGrid.Show(self.Session.Results)
+    end
+
+    core.Config.SetRecorderItemOfNote(nil)
+    UpdateNotesLabel()
+
+    UpdateUI()
+end
+
+local function NormaliseSession(session, createCopy)
+    session = createCopy and core.TableHelper.DeepCopy(session) or session
+    session.Mode = session.Mode or session.ItemId and "item" or session.NameMapId and "location" or "text"
+    session.Filter = session.Filter or nil
+    session.Notes = session.Notes or nil
+
+    if session.Mode == "location" then
+        session.Name = nil
+        session.ItemId = nil
+    elseif session.Mode == "item" then
+        session.Name = nil
+        session.NameMapId = nil
+    else
+        session.ItemId = nil
+        session.NameMapId = nil
+        session.Name = session.Name or ""
+    end
+
+    if session.IsRunning then
+        session.Time = session.Time + time() - session.StartTime
+    end
+
+    session.StartTime = nil
+    session.Timer = nil
+    session.IsRunning = false
+    session.IsPaused = false
+
+    if session.Routes and #session.Routes == 1 then
+        session.RouteZone = session.Routes[1].RouteZone
+        session.RouteKey = session.Routes[1].RouteKey
+        session.RouteName = session.Routes[1].RouteName
+        session.RouteData = session.Routes[1].RouteData
+        session.Routes = nil
+    end
+
+    return session
+end
+
+local function SetCurrentLocation()
+    self.Session.MapId = core.LocationHelper.GetPlayerCurrentMapId()
+    UpdateUI()
+end
+
+local function SetNameAsCurrentLocation()
+    self.Session.NameMapId = core.LocationHelper.GetPlayerCurrentMapId()
+    self.Session.ItemId = nil
+    self.Session.PetId = nil
+    self.Session.ItemLink = nil
+    self.Session.Name = nil
+    self.Session.Mode = "location"
+    UpdateUI()
+end
+
+local function SetFarmName()
+    local type, id, itemLink = GetCursorInfo()
+	if type == 'item' then
+        if id == core.PriceSourceHelper.PetCageItemId then
+            self.Session.PetId = tonumber(itemLink:match(BPET_ID_REGEX))
+            self.Session.ItemLink = itemLink
+        else
+            self.Session.PetId = nil
+            self.Session.ItemLink = nil
+        end
+        self.Session.ItemId = id
+        self.Session.Name = nil
+        self.Session.NameMapId = nil
+        self.Session.Mode = "item"
+        UpdateUI()
+    else
+        if IsShiftKeyDown() and self.Session.Mode == "item" and self.Session.ItemId then
+            ChatEdit_InsertLink(self.Session.ItemLink or core.PriceSourceHelper.GetItemLink(self.Session.ItemId))
+            return
+        end
+
+        local onAccept = function(dialog)
+            local name = (dialog.editBox or dialog:GetEditBox()):GetText()
+
+            if strlen(name) > 0 then
+                self.Session.Name = name
+                self.Session.ItemId = nil
+                self.Session.PetId = nil
+                self.Session.ItemLink = nil
+                self.Session.NameMapId = nil
+                self.Session.Mode = "text"
+                UpdateUI()
+            end
+        end
+
+        core.UI.ShowDialog({
+            Text = core.GetString("SetFarmNameMessage"),
+            Button1 = core.GetString("Set"),
+            Button2 = core.GetString("Cancel"),
+            Button3 = core.GetString("UseLocation"),
+            HasEditBox = true,
+            TextBoxValue = self.Session.Name or "",
+            OnAccept = onAccept,
+            OnAlt = SetNameAsCurrentLocation
+        })
+	end
+end
+
+local function SetRawGold()
+    core.UI.InputDialog({ Text = core.GetString("ChangeRawGoldMessage"), HasEditBox = true, IsNumeric = true, TextBoxValue = tostring(self.Session.Money), OnAccept = function(dialog)
+        local value = tonumber((dialog.editBox or dialog:GetEditBox()):GetText())
+        if value ~= nil then
+            self.Session.Money = value
+            UpdateUI()
+        end
+    end })
+end
+
+local function SetNotes()
+    core.UI.InputDialog({ Text = core.GetString("ChangeNotesMessage"), HasEditBox = true, IsNumeric = false, TextBoxValue = tostring(self.Session.Notes or ""), OnAccept = function(dialog)
+        local value = (dialog.editBox or dialog:GetEditBox()):GetText()
+        if value ~= nil then
+            self.Session.Notes = value
+            UpdateNotesLabel()
+        end
+    end })
+end
+
+local function SetTime()
+    if self.Session.IsRunning then
+        print(core.GetString("RecordingInProgress"))
+        return
+    end
+    local currentTime = math.ceil(GetCurrentDuration() / 60)
+
+    core.UI.InputDialog({ Text = core.GetString("SetTimeMessage"), HasEditBox = true, IsNumeric = true, TextBoxValue = tostring(currentTime), OnAccept = function(dialog)
+        local value = tonumber((dialog.editBox or dialog:GetEditBox()):GetText())
+        if value ~= nil then
+            self.Session.Time = value * 60
+            UpdateUI()
+        end
+    end })
+end
+
+local function SetTimer()
+    if self.Session.IsRunning then
+        print(core.GetString("RecordingInProgress"))
+        return
+    end
+    local currentTimer = self.Session.Timer and math.ceil(self.Session.Timer / 60) or 60
+    local onAccept = function(dialog)
+        local value = tonumber((dialog.editBox or dialog:GetEditBox()):GetText())
+        if value ~= nil and value ~= 0 then
+            self.Session.Timer = value * 60
+            UpdateUI()
+        end
+    end
+    local onAlt = function(dialog)
+        self.Session.Timer = nil
+        UpdateUI()
+    end
+
+    core.UI.InputDialog({
+        Text = core.GetString("SetTimerMessage"),
+        Button3 = core.GetString("ClearTimer"),
+        HasEditBox = true,
+        IsNumeric = true,
+        TextBoxValue = tostring(currentTimer),
+        OnAccept = onAccept,
+        OnAlt = onAlt
+    })
+end
+
+local function GetItemTypes(itemId)
+    local _,_,_,_,_,itemType=GetItemInfo(itemId)
+    return itemType
+end
+
+local function SetItemTypes()
+    if not tradeSkillItemType then
+        tradeSkillItemType = GetItemTypes(2589)
+    end
+
+    if not weaponItemType then
+        weaponItemType = GetItemTypes(8178)
+    end
+
+    if not armorItemType then
+        armorItemType = GetItemTypes(1433)
+    end
+end
+
+local function SortJunk(row)
+    for _, item in pairs(core.TableHelper.ShallowCopy(self.Session.Results)) do
+        if not item.PetId and core.ScrapHelper.IsJunk(item.Id) then
+            local itemSellPrice = nil
+            if item.ItemLink then
+                _, _, _, _, _, _, _, _, _, _, itemSellPrice = GetItemInfo(item.ItemLink)
+            end
+            itemSellPrice = itemSellPrice or core.PriceSourceHelper.GetItemVendorSellPrice(item.Id)
+            self.Session.Money = self.Session.Money + (itemSellPrice or 0) * (item.Quantity or 0)
+            core.TableHelper.RemoveValue(self.Session.Results, item)
+        end
+    end
+
+    ReloadGrid = true
+    UpdateUI()
+end
+
+local function SetIsGroupFarm(isGroup)
+    if isGroup then
+        self.UI.IsGroupFarmCheckBox:SetValue(false)
+        core.UI.InputDialog({ Text = core.GetString("SetNumberOfPlayers"), HasEditBox = true, IsNumeric = true, TextBoxValue = self.Session.NumberOfPlayers or "5", OnAccept = function(dialog)
+            local value = tonumber((dialog.editBox or dialog:GetEditBox()):GetText())
+            if value ~= nil and value > 0 and value <= 50 then
+                self.Session.NumberOfPlayers = value
+                self.Session.IsGroupFarm = true
+                UpdateUI()
+            end
+        end })
+    else
+        self.Session.IsGroupFarm = false
+    end
+
+    UpdateUI()
+end
+
+local function SetupRoute(session)
+    if session.RouteZone and session.RouteKey and session.RouteName and session.RouteData then
+        local route = {
+            RouteZone = session.RouteZone,
+            RouteKey = session.RouteKey,
+            RouteName = session.RouteName,
+            RouteData = session.RouteData
+        }
+
+        session.Routes = { route }
+        session.RouteZone = nil
+        session.RouteKey = nil
+        session.RouteName = nil
+        session.RouteData = nil
+    end
+end
+
+local function Save()
+    local farms = core.Config.GetUserFarms()
+    local data = NormaliseSession(self.Session, true)
+    SetupRoute(data)
+
+    for i, farm in pairs(farms) do
+        if farm.Id == data.Id then
+            tremove(farms, i)
+        end
+    end
+
+    table.insert(farms, data)
+
+    core.UserDataModule.ClearCache()
+    core.DashboardModule.ClearCache()
+
+    if core.UI.MainWindow.CurrentModule() == core.UserDataModule then
+        core.UI.MainWindow.ShowModule(core.UserDataModule)
+    elseif core.UI.MainWindow.CurrentModule() == core.DashboardModule then
+        core.UI.MainWindow.ShowModule(core.DashboardModule)
+    end
+end
+
+local function OnRouteChanged(s, event, route)
+    self.Session.RouteZone = route and route.Zone.Id or nil
+    self.Session.RouteKey = route and route.Name:gsub("%s", "\255") or nil
+    self.Session.RouteName = route and route.Name or nil
+    self.Session.RouteData = route and route.Data or nil
+end
+
+local function OnFilterChanged(s, event, filter)
+    self.Session.Filter = filter and filter.Value or nil
+end
+
+local function ClearRoute()
+    self.Session.RouteZone = nil
+    self.Session.RouteKey = nil
+    self.Session.RouteName = nil
+    self.Session.RouteData = nil
+
+    self.ImportedRouteLabel:SetText(GetRouteName())
+end
+
+local function ProcessItemOfNote(itemId, petId, itemLink, itemPrice, quantity)
+    local recorderItemOfNoteMinPrice = core.Config.GetRecorderItemOfNoteMinPrice()
+    if recorderItemOfNoteMinPrice and recorderItemOfNoteMinPrice > 0 and itemPrice >= recorderItemOfNoteMinPrice * 10000 then
+        core.Config.SetRecorderItemOfNote({ Id = itemId, PetId = petId, ItemLink = itemLink })
+
+        local alertId = core.Config.GetRecorderItemOfNoteSoundId()
+
+        if alertId then
+            core.SoundHelper.Play(alertId)
+        end
+        if core.Config.GetRecorderItemOfNoteRaidWarning() then
+            local money = core.PriceSourceHelper.ToMoneyString(itemPrice)
+            local msg = quantity > 1 and string.format(core.GetString("ItemOfNoteRaidWarningWithQuantityFormat"), itemLink, quantity, money)
+                or string.format(core.GetString("ItemOfNoteRaidWarningFormat"), itemLink, money)
+            RaidNotice_AddMessage(RaidWarningFrame, msg, ChatTypeInfo["RAID_WARNING"])
+        end
+    end
+end
+
+local function ProcessItem(itemId, quantity, itemLink, itemRarity, bindType, itemSellPrice, itemType)
+    if itemId == core.PriceSourceHelper.PetCageItemId then
+        return nil
+    end
+
+    if core.Config.GetRecorderLogPets() and (bindType == 1 or core.Config.GetRecorderLogBOEPetItems()) then
+        local petName, _, _, _, _, _, _, _, isTradeable, _, _, _, petId = C_PetJournal.GetPetInfoByItemID(tonumber(itemId))
+
+        if petName and petId and isTradeable then
+            itemId = core.PriceSourceHelper.PetCageItemId
+            itemLink = core.PriceSourceHelper.GetPetLink(petId, petName)
+            local item
+            for _, i in pairs(self.Session.Results) do
+                if i.Id == itemId and i.PetId == petId then
+                    item = i
+                end
+            end
+
+            if item then
+                item.Quantity = item.Quantity + 1
+            else
+                item = { Id = itemId, Quantity = 1, ItemLink = itemLink }
+                if petId then
+                    item.PetId = petId
+                end
+                table.insert(self.Session.Results, item)
+            end
+
+            ProcessItemOfNote(itemId, petId, itemLink, core.PriceSourceHelper.GetItemPrice('p:' .. petId), quantity)
+
+            ReloadGrid = true
+
+            return nil
+        end
+    end
+
+    SetItemTypes()
+    local addItem = (bindType ~= 1 or core.PriceSourceHelper.HasCustomPrice(itemId)) and not core.ScrapHelper.IsJunk(itemId) and itemRarity >= core.Config.GetRecorderMinQuality()
+    local itemPrice = addItem and core.PriceSourceHelper.GetItemPrice(itemId) or -1
+
+    if addItem then
+        addItem = itemPrice >= core.Config.GetRecorderMinPrice()
+    end
+
+    if addItem then
+        if self.Session.Filter == 1 and itemType ~= tradeSkillItemType then
+            addItem = false
+        elseif self.Session.Filter == 2 and itemType ~= weaponItemType and itemType ~= armorItemType then
+            addItem = false
+        end
+    end
+
+    if addItem then
+        local item
+        for _, i in pairs(self.Session.Results) do
+            if i.Id == itemId then
+                item = i
+            end
+        end
+
+        ProcessItemOfNote(itemId, nil, itemLink, itemPrice, quantity)
+
+        if item then
+            item.Quantity = item.Quantity + quantity
+        else
+            table.insert(self.Session.Results, { Id = itemId, Quantity = quantity, ItemLink = itemLink })
+        end
+        
+        ReloadGrid = true
+    else
+        self.Session.Money = self.Session.Money + (itemSellPrice or 0) * quantity
+    end
+
+    UpdateUI()
+end
+
+local function OnEvent(_, event, arg)
+    if issecretvalue and issecretvalue(arg) and canaccessvalue and not canaccessvalue(arg) then
+        return
+    end
+
+    if self.Session.IsPaused and (event == "CHAT_MSG_MONEY" or (event == "CHAT_MSG_LOOT" and arg:match(LOOT_ITEM_SELF_REGEX))) then
+        ResumeSession()
+    end
+
+    if not self.Session.IsRunning then return end
+
+	if event == "CHAT_MSG_LOOT" then
+		local itemId, quantity, itemLink
+
+        _, itemId, _, quantity = arg:match(LOOT_ITEM_SELF_ITEMID_MULTIPLE_REGEX)
+        itemLink = arg:match(LOOT_ITEM_SELF_MULTIPLE_REGEX)
+
+		if not itemId then
+			_, itemId = arg:match(LOOT_ITEM_SELF_ITEMID_REGEX)
+            itemLink, sss = arg:match(LOOT_ITEM_SELF_REGEX)
+			quantity = 1
+		end
+
+		if not itemId then
+            _, itemId, _, quantity = arg:match(LOOT_ITEM_PUSHED_SELF_ITEMID_MULTIPLE_REGEX)
+            itemLink = arg:match(LOOT_ITEM_PUSHED_SELF_MULTIPLE_REGEX)
+		end
+
+		if not itemId then
+            _, itemId, _, quantity = arg:match(LOOT_ITEM_PUSHED_SELF_ITEMID_REGEX)
+            itemLink, sss = arg:match(LOOT_ITEM_PUSHED_SELF_REGEX)
+			quantity = 1
+		end
+
+        if not itemId and self.Session.IsGroupFarm then
+            _, _, itemId, _, quantity = arg:match(LOOT_ITEM_ITEMID_MULTIPLE_REGEX)
+            _, itemLink = arg:match(LOOT_ITEM_MULTIPLE_REGEX)
+
+		    if not itemId then
+			    _, _, itemId = arg:match(LOOT_ITEM_ITEMID_REGEX)
+                _, itemLink, sss = arg:match(LOOT_ITEM_REGEX)
+			    quantity = 1
+		    end
+        end
+
+        if itemId and itemId ~= core.PriceSourceHelper.PetCageItemId then
+            itemId = tonumber(itemId)
+
+            if type(quantity) == "string" then quantity = tonumber(quantity)  end
+
+            local itemName, _, itemRarity, _, _, itemType, _, _, _, _, itemSellPrice, _, _, bindType = GetItemInfo(itemLink)
+            
+            if itemName ~= nil then
+                ProcessItem(itemId, quantity, itemLink, itemRarity, bindType, itemSellPrice, itemType)
+            else
+                local queuedItem = {}
+
+                for i, item in pairs(self.ItemQueue) do
+                    if item.Id == itemId then
+                        queuedItem = tremove(farms, i)
+                    end
+                end
+
+                queuedItem.Id = itemId
+                queuedItem.Quantity = (queuedItem.Quantity or 0) + quantity
+                queuedItem.ItemLink = itemLink
+
+                table.insert(self.ItemQueue, queuedItem)
+            end
+        end
+
+        UpdateUI()
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        for i, item in pairs(self.ItemQueue) do
+            if item.Id == arg then
+                local itemName, _, itemRarity, _, _, _, _, _, _, _, itemSellPrice, _, _, bindType = GetItemInfo(item.ItemLink)
+
+                if itemName ~= nil then
+                    ProcessItem(item.Id, item.Quantity, item.ItemLink, itemRarity, bindType, itemSellPrice)
+                    tremove(self.ItemQueue, i)
+                end
+            end
+        end
+    elseif event == "CHAT_MSG_MONEY" then
+        local gold = arg:match(GOLD_AMOUNT_REGEX)
+        local silver = arg:match(SILVER_AMOUNT_REGEX)
+        local copper = arg:match(COPPER_AMOUNT_REGEX)
+
+        local sum = ((gold or 0)*100 + (silver or 0))*100 + (copper or 0)
+
+        self.Session.Money = self.Session.Money + sum
+
+        UpdateUI()
+	end
+end
+
+local function LoadSession(session)
+    self.Session = NormaliseSession(session, true)
+    core.Config.SetCurrentRecorderSession(self.Session)
+    self.UI.LootGrid.Show(self.Session.Results)
+
+    core.Config.SetRecorderItemOfNote(nil)
+
+    UpdateUI()
+    UpdateNotesLabel()
+end
+
+local function UpdateInstanceResets()
+    local currentTime = time()
+    local instanceResets = core.Config.GetInstanceResets()
+
+    for _, instance in pairs(instanceResets) do
+        if currentTime - instance.start > 60*60 then
+            core.TableHelper.RemoveValue(instanceResets, instance)
+        end
+    end
+
+    SetResetInstancesButtonLabel()
+    SetResetInstancesButtonTooltip()
+end
+
+local function OnUpdate()
+    if self.Session.IsRunning and self.SessionLastUpdated ~= time() then
+        UpdateUI()
+    end
+
+    if self.LastUpdated ~= time() then
+        UpdateInstanceResets()
+
+        self.LastUpdated = time()
+    end
+end
+
+local function AddItem()
+    local type, id, itemLink = GetCursorInfo()
+    if type == 'item' then
+        local item
+        local petId = (id == core.PriceSourceHelper.PetCageItemId and tonumber(itemLink:match(BPET_ID_REGEX))) or nil
+
+        if petId == nil and id == core.PriceSourceHelper.PetCageItemId then
+            return nil
+        end
+
+        for _, i in pairs(self.Session.Results) do
+            if i.Id == id and i.PetId == petId then
+                item = i
+            end
+        end
+
+        if item then
+            item.Quantity = item.Quantity + 1
+        else
+            item = { Id = id, Quantity = 1, ItemLink = itemLink }
+            if petId then
+                item.PetId = petId
+            end
+            table.insert(self.Session.Results, item)
+        end
+
+        if self.Session.IsRunning then
+            ReloadGrid = true
+       else
+           self.UI.LootGrid.ClearCache()
+           self.UI.LootGrid.Reload()
+       end
+    end
+end
+
+local function SetMode(mode)
+    self.Mode = mode
+    WITDB.Settings.Recorder.Mode = mode
+
+    self.UI.CompactModeButton:Enable()
+    self.UI.DetailsModeButton:Enable()
+    self.UI.EditModeButton:Enable()
+
+    if mode == "Compact" then
+        self.UI.CompactModeButton:Disable()
+        self.UI.Frame:SetWidth(155)
+        self.UI.Frame:SetHeight(142)
+    elseif mode == "Details" then
+        self.UI.DetailsModeButton:Disable()
+        self.UI.Frame:SetWidth(285)
+        self.UI.Frame:SetHeight(167)
+    elseif mode == "Edit" then
+        self.UI.EditModeButton:Disable()
+        self.UI.Frame:SetWidth(420)
+        self.UI.Frame:SetHeight(575)
+    end
+
+    if WITDB.Settings.Recorder.Top then
+        self.UI.Frame:ClearAllPoints()
+		self.UI.Frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", WITDB.Settings.Recorder.Left, WITDB.Settings.Recorder.Top)
+    end
+
+    wipe(self.UI.Frame.children)
+    wipe(self.UI.Hidden.children)
+
+    local compactTarget = self.UI.Frame
+    local detailsTarget = mode == "Compact" and self.UI.Hidden or self.UI.Frame
+    local editTarget = mode == "Edit" and self.UI.Frame or self.UI.Hidden
+
+    compactTarget:AddChild(self.UI.ButtonsPanel)
+
+    detailsTarget:AddChild(self.UI.TitleLabel)
+
+    detailsTarget:AddChild(self.UI.LocationLabel)
+    editTarget:AddChild(self.UI.RoutePicker)
+    editTarget:AddChild(self.UI.FilterPicker)
+    editTarget:AddChild(self.UI.NotesLabel)
+    detailsTarget:AddChild(self.UI.MoneyLabel)
+    detailsTarget:AddChild(self.UI.ItemValueLabel)
+    compactTarget:AddChild(self.UI.TotalValueLabel)
+    editTarget:AddChild(self.UI.IsGroupFarmCheckBox)
+
+    editTarget:AddChild(self.UI.AddItemIcon)
+    editTarget:AddChild(self.UI.LootFrame)
+    self.UI.LootGrid.Show(self.Session.Results)
+    self.UI.LootFrame:DoLayout()
+
+    editTarget:AddChild(self.UI.SortJunkButton)
+
+    compactTarget:AddChild(self.UI.ResetInstancesButton)
+    compactTarget:AddChild(self.UI.ItemOfNote)
+
+    SetResetInstancesButtonLabel()
+
+    UpdateUI()
+end
+
+local function SetFrameTooltip(frame, text)
+    frame:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(frame, "ANCHOR_PRESERVE")
+	    GameTooltip:ClearAllPoints()
+	    GameTooltip:SetPoint("TOP", frame, "BOTTOM")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(text)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+end
+
+local function SetFrameTooltipWithGetter(frame, getter)
+    frame:SetScript("OnEnter", function()
+        local text = getter()
+        if text and strlen(text) > 0 then
+            GameTooltip:SetOwner(frame, "ANCHOR_PRESERVE")
+	        GameTooltip:ClearAllPoints()
+	        GameTooltip:SetPoint("TOP", frame, "BOTTOM")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine(text)
+            GameTooltip:Show()
+        end
+    end)
+    frame:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+end
+
+local function lootContextMenu(module, row)
+    return {
+        {
+            Name = "SetQuantity",
+            DisplayName = core.GetString("SetQuantity"),
+            Action = function(row)
+                core.UI.InputDialog({ Text = core.GetString("SetQuantityMessage"), HasEditBox = true, IsNumeric = true, Data = row.Data, TextBoxValue = tostring(row.Data.Quantity), OnAccept = function(dialog, data)
+                    local value = tonumber((dialog.editBox or dialog:GetEditBox()):GetText())
+                    if value ~= nil and value > 0 then
+                        data.Quantity = value
+                        ReloadGrid = true
+                        UpdateUI()
+                    end
+                end })
+            end,
+            ActionArg = row,
+        },
+        {
+            Name = "Vendor",
+            DisplayName = core.GetString("Vendor"),
+            Action = function(row)
+                local itemSellPrice = nil
+
+                if row.Data.ItemLink then
+                    _, _, _, _, _, _, _, _, _, _, itemSellPrice = GetItemInfo(row.Data.ItemLink)
+                end
+
+                itemSellPrice = itemSellPrice or core.PriceSourceHelper.GetItemVendorSellPrice(row.Data.Id)
+                self.Session.Money = self.Session.Money + (itemSellPrice or 0) * (row.Data.Quantity or 0)
+                core.TableHelper.RemoveValue(self.Session.Results, row.Data)
+                ReloadGrid = true
+                UpdateUI()
+            end,
+            ActionArg = row,
+        },
+        {
+            Name = "Remove",
+            DisplayName = core.GetString("Remove"),
+            Action = function(row)
+                core.TableHelper.RemoveValue(self.Session.Results, row.Data)
+                ReloadGrid = true
+                UpdateUI()
+            end,
+            ActionArg = row,
+        },
+    }
+end
+
+local function timerMenu()
+    return {
+        Children =
+        {
+            {
+                Name = "Change",
+                DisplayName = core.GetString("Change"),
+                Action = SetTime
+            },
+            {
+                Name = "SetTimer",
+                DisplayName = core.GetString("SetTimer"),
+                Action = SetTimer
+            },
+        }
+    }
+end
+
+local function Init()
+    self.UI = {}
+
+    self.UI.Frame = AceGUI:Create("Window")
+    self.UI.Frame:SetTitle(core.GetString("Recorder"))
+    self.UI.Frame.titletext:SetJustifyH("LEFT")
+    self.UI.Frame:EnableResize(false)
+
+    if WITDB.Settings.Recorder.Top then
+        self.UI.Frame:ClearAllPoints()
+		self.UI.Frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", WITDB.Settings.Recorder.Left, WITDB.Settings.Recorder.Top)
+    end
+    
+    self.UI.Frame.title:HookScript("OnMouseUp", function() 
+        WITDB.Settings.Recorder.Top = self.UI.Frame.frame:GetTop()
+        WITDB.Settings.Recorder.Left = self.UI.Frame.frame:GetLeft()
+    end)
+
+    self.UI.EditModeButton = CreateFrame("Button", nil, self.UI.Frame.frame, "UIPanelButtonTemplate")
+	self.UI.EditModeButton:SetPoint("TOPRIGHT", self.UI.Frame.closebutton, "TOPLEFT", 4, -4)
+    self.UI.EditModeButton:SetWidth(24)
+    self.UI.EditModeButton:SetNormalTexture("Interface\\AddOns\\WIT\\Images\\Icons\\mode_edit")
+    self.UI.EditModeButton:SetScript("OnClick", function() SetMode("Edit") end)
+    SetFrameTooltip(self.UI.EditModeButton, core.GetString("EditMode"))
+
+    self.UI.DetailsModeButton = CreateFrame("Button", nil, self.UI.Frame.frame, "UIPanelButtonTemplate")
+	self.UI.DetailsModeButton:SetPoint("TOPRIGHT", self.UI.EditModeButton, "TOPLEFT")
+    self.UI.DetailsModeButton:SetWidth(24)
+    self.UI.DetailsModeButton:SetNormalTexture("Interface\\AddOns\\WIT\\Images\\Icons\\mode_details")
+    self.UI.DetailsModeButton:SetScript("OnClick", function() SetMode("Details") end)
+    SetFrameTooltip(self.UI.DetailsModeButton, core.GetString("StandardMode"))
+
+    self.UI.CompactModeButton = CreateFrame("Button", nil, self.UI.Frame.frame, "UIPanelButtonTemplate")
+	self.UI.CompactModeButton:SetPoint("TOPRIGHT", self.UI.DetailsModeButton, "TOPLEFT")
+    self.UI.CompactModeButton:SetWidth(24)
+    self.UI.CompactModeButton:SetNormalTexture("Interface\\AddOns\\WIT\\Images\\Icons\\mode_compact")
+    self.UI.CompactModeButton:SetScript("OnClick", function() SetMode("Compact") end)
+    SetFrameTooltip(self.UI.CompactModeButton, core.GetString("CompactMode"))
+
+    self.UI.Frame.title:SetPoint("BOTTOMRIGHT", self.UI.CompactModeButton, "BOTTOMLEFT")
+    
+    self.UI.NewButton = core.UI.ActionIcon({ Icon = "Interface\\AddOns\\WIT\\Images\\Icons\\new" })
+    self.UI.NewButton:OnClick(function()
+        core.UI.ConfirmableDialog({ Text = core.GetString("NewSessionConfirmationMessage"), OnAccept = function()
+            ResetSession()
+        end })
+    end)
+    self.UI.SaveButton = core.UI.ActionIcon({ Icon = "Interface\\AddOns\\WIT\\Images\\Icons\\save" })
+    self.UI.SaveButton:OnClick(Save)
+    self.UI.PlayButton = core.UI.ActionIcon({ Icon = "Interface\\AddOns\\WIT\\Images\\Icons\\play" })
+    self.UI.PlayButton:OnClick(ResumeSession)
+    self.UI.PauseButton = core.UI.ActionIcon({ Icon = "Interface\\AddOns\\WIT\\Images\\Icons\\pause" })
+    self.UI.PauseButton:OnClick(PauseSession)
+    self.UI.StopButton = core.UI.ActionIcon({ Icon = "Interface\\AddOns\\WIT\\Images\\Icons\\stop" })
+    self.UI.StopButton:OnClick(StopSession)
+
+    self.UI.RoutePicker = core.UI.RoutePicker()
+    self.UI.RoutePicker:SetCallback("OnValueChanged", OnRouteChanged)
+
+    self.UI.FilterPicker = core.UI.SelectPicker({ Items = quickFilters, PromptFormat = core.GetString("RecorderFilterFormat") })
+    self.UI.FilterPicker:SetCallback("OnValueChanged", OnFilterChanged)
+    SetFrameTooltip(self.UI.FilterPicker.frame, core.GetString("RecorderFilterDescription"))
+
+    self.UI.TimeLabel = AceGUI:Create("InteractiveLabel")
+    core.UI.ApplyContextMenuToFrame(self.UI.TimeLabel, timerMenu())
+
+    self.UI.TitleLabel = AceGUI:Create("InteractiveLabel")
+    self.UI.TitleLabel:SetFullWidth(true)
+    self.UI.TitleLabel:SetCallback("OnClick", SetFarmName)
+    self.UI.TitleLabel:SetCallback("OnEnter", function()
+        GameTooltip:SetOwner(self.UI.TitleLabel.frame, "ANCHOR_PRESERVE")
+	    GameTooltip:ClearAllPoints()
+        if self.Session.Mode == "item" and self.Session.ItemId then
+            local x = self.UI.TitleLabel.label:GetStringWidth() + 5
+	        GameTooltip:SetPoint("LEFT", self.UI.TitleLabel.frame, "LEFT", x, 0)
+            if self.Session.PetId then
+                BattlePetToolTip_ShowLink(self.Session.ItemLink)
+            else
+                GameTooltip:SetHyperlink("item:" .. self.Session.ItemId)
+                GameTooltip:Show()
+            end
+        else
+            GameTooltip:SetPoint("TOP", self.UI.TitleLabel.frame, "BOTTOM")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine(core.GetString("SetFarmNameTooltip"))
+            GameTooltip:Show()
+        end
+    end)
+    self.UI.TitleLabel:SetCallback("OnLeave", function()
+        if self.Session.PetId then
+            BattlePetTooltip:Hide()
+        else
+            GameTooltip:Hide()
+        end
+    end)
+
+    self.UI.LocationLabel = AceGUI:Create("InteractiveLabel")
+    self.UI.LocationLabel:SetFullWidth(true)
+    self.UI.LocationLabel:SetCallback("OnClick", function() core.UI.ConfirmableDialog({ Text = core.GetString("SessionSetCurrentLocationConfirmationMessage"), OnAccept = SetCurrentLocation }) end)
+
+    self.UI.MoneyLabel = AceGUI:Create("InteractiveLabel")
+    self.UI.MoneyLabel:SetFullWidth(true)
+    self.UI.MoneyLabel:SetCallback("OnClick", SetRawGold)
+    self.UI.ItemValueLabel = AceGUI:Create("Label")
+    self.UI.ItemValueLabel:SetFullWidth(true)
+    self.UI.TotalValueLabel = AceGUI:Create("Label")
+    self.UI.TotalValueLabel:SetFullWidth(true)
+
+    self.UI.NotesLabel = AceGUI:Create("InteractiveLabel")
+    self.UI.NotesLabel:SetFullWidth(true)
+    self.UI.NotesLabel:SetCallback("OnClick", SetNotes)
+    SetFrameTooltipWithGetter(self.UI.NotesLabel.frame, function() return self.Session.Notes end)
+
+    self.UI.IsGroupFarmCheckBox = AceGUI:Create("CheckBox")
+    self.UI.IsGroupFarmCheckBox:SetLabel(core.GetString("TrackGroupLoot"))
+    self.UI.IsGroupFarmCheckBox:SetCallback("OnValueChanged", function(_, _, isChecked) SetIsGroupFarm(isChecked) end)
+    SetFrameTooltip(self.UI.IsGroupFarmCheckBox.frame, core.GetString("TrackGroupLootTooltip"))
+
+    self.UI.ResetInstancesButton = AceGUI:Create("Button")
+    SetResetInstancesButtonLabel()
+    self.UI.ResetInstancesButton:SetFullWidth(true)
+    self.UI.ResetInstancesButton:SetCallback("OnClick", function()
+        ResetInstances()
+        SetResetInstancesButtonLabel()
+        showInstanceResetTooltip = false
+        GameTooltip:Hide()
+    end)
+    self.UI.ResetInstancesButton:SetCallback("OnEnter", function()
+        showInstanceResetTooltip = true
+        GameTooltip:SetOwner(self.UI.ResetInstancesButton.frame, "ANCHOR_PRESERVE")
+        GameTooltip:ClearAllPoints()
+        GameTooltip:SetPoint("LEFT", self.UI.ResetInstancesButton.frame, "RIGHT")
+        SetResetInstancesButtonTooltip()
+        GameTooltip:Show()
+    end)
+    self.UI.ResetInstancesButton:SetCallback("OnLeave", function()
+        showInstanceResetTooltip = false
+        GameTooltip:Hide()
+    end)
+
+    self.UI.SortJunkButton = AceGUI:Create("Button")
+    self.UI.SortJunkButton:SetText(core.GetString("SortJunk"))
+    self.UI.SortJunkButton:SetFullWidth(true)
+    self.UI.SortJunkButton:SetCallback("OnClick", SortJunk)
+    self.UI.SortJunkButton:SetCallback("OnEnter", function()
+        GameTooltip:SetOwner(self.UI.SortJunkButton.frame, "ANCHOR_PRESERVE")
+        GameTooltip:ClearAllPoints()
+        GameTooltip:SetPoint("LEFT", self.UI.SortJunkButton.frame, "RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(core.GetString("SortJunkTooltip"))
+        GameTooltip:Show()
+    end)
+    self.UI.SortJunkButton:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    self.UI.SortJunkButton:SetDisabled(not core.ScrapHelper.IsScrapAvailable())
+
+    self.UI.ItemOfNote = AceGUI:Create("InteractiveLabel")
+    self.UI.ItemOfNote:SetFullWidth(true)
+    self.UI.ItemOfNote:SetCallback("OnEnter", function()
+        local item = core.Config.GetRecorderItemOfNote()
+        if item and item.ItemLink then
+            GameTooltip:SetOwner(self.UI.ItemOfNote.frame, "ANCHOR_PRESERVE")
+            GameTooltip:ClearAllPoints()
+            GameTooltip:SetPoint("LEFT", self.UI.ItemOfNote.frame, "RIGHT")
+            GameTooltip:ClearLines()
+            GameTooltip:SetHyperlink(item.ItemLink)
+            GameTooltip:Show()
+        end
+    end)
+    self.UI.ItemOfNote:SetCallback("OnLeave", function()
+        if core.Config.GetRecorderItemOfNote() then
+            GameTooltip:Hide()
+        end
+    end)
+
+    self.UI.ButtonsPanel = AceGUI:Create("SimpleGroup")
+    self.UI.ButtonsPanel:SetLayout("Flow")
+    self.UI.ButtonsPanel:SetFullWidth(true)
+
+    self.UI.ButtonsPanel:AddChild(self.UI.NewButton)
+    self.UI.ButtonsPanel:AddChild(self.UI.SaveButton)
+    self.UI.ButtonsPanel:AddChild(self.UI.PlayButton)
+    self.UI.ButtonsPanel:AddChild(self.UI.PauseButton)
+    self.UI.ButtonsPanel:AddChild(self.UI.StopButton)
+    self.UI.ButtonsPanel:AddChild(self.UI.TimeLabel)
+
+    self.UI.AddItemIcon = AceGUI:Create("Icon")
+    self.UI.AddItemIcon:SetLabel(core.GetString("AddItem"))
+    self.UI.AddItemIcon:SetImageSize(48, 48)
+    self.UI.AddItemIcon:SetFullWidth(true)
+    self.UI.AddItemIcon:SetImage("Interface\\BUTTONS\\UI-EmptySlot")
+    self.UI.AddItemIcon:SetCallback("OnClick", AddItem)
+
+    self.UI.LootFrame = AceGUI:Create("SimpleGroup")
+    self.UI.LootFrame:SetFullWidth(true)
+    self.UI.LootFrame:SetHeight(250)
+    self.UI.LootFrame:SetLayout("Fill")
+
+    local scrollFrame = AceGUI:Create("WITScrollFrame")
+    scrollFrame:SetLayout("WITList")
+
+    local columns = {
+        core.GridColumns.ContextMenuColumn({ GetMenu = lootContextMenu }),
+        core.GridColumns.ItemNameColumn({ ItemIdProperty = "Id" }),
+        core.GridColumns.ItemValueColumn()
+    }
+    local options = {
+        MinWidth = 390,
+        Columns = columns,
+        Sort = { Column = columns[2], Direction = "ASC" }
+    }
+    self.UI.LootGrid = core.UI.Grid(options)
+    self.UI.LootGrid.Show(self.Session.Results)
+    self.UI.LootGrid:SetCallback("OnReload", function() scrollFrame:DoLayout() scrollFrame:FixScroll() end)
+
+    scrollFrame:AddChild(self.UI.LootGrid)
+    self.UI.LootFrame:AddChild(scrollFrame)
+    
+    self.UI.Hidden = AceGUI:Create("SimpleGroup")
+    self.UI.Hidden.frame:Hide()
+end
+
+function core.ResetRecorderPosition()
+    wipe(WITDB.Settings.Recorder)
+
+    if self then
+        self.UI.Frame:ClearAllPoints()
+        self.UI.Frame:SetPoint("CENTER",UIParent,"CENTER")
+    end
+end
+
+function core.Recorder()
+    SetItemTypes()
+    if self then return self end
+    self = {}
+
+    self.ItemQueue = {}
+    self.Session = NormaliseSession(core.Config.GetCurrentRecorderSession() or core.NewRecorderSession())
+    core.Config.SetCurrentRecorderSession(self.Session)
+
+    if self.Session.IsRunning and self.Session.CurrentTime ~= nil then
+        self.Session.Time = self.Session.Time + self.Session.CurrentTime - self.Session.StartTime
+        self.Session.IsRunning = false
+    end
+
+    Init()
+
+    SetMode(WITDB.Settings.Recorder.Mode or "Details")
+
+    UpdateNotesLabel()
+
+    self.UI.Frame.frame:RegisterEvent("CHAT_MSG_LOOT")
+    self.UI.Frame.frame:RegisterEvent("CHAT_MSG_MONEY")
+    self.UI.Frame.frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    self.UI.Frame.frame:SetScript("OnEvent", OnEvent)
+    self.UI.Frame.frame:SetScript("OnUpdate", OnUpdate)
+
+    self.Show = function(mode)
+        self.UI.Frame:Show()
+    end
+
+    self.LoadSession = LoadSession
+
+    return self
+end

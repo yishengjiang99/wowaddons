@@ -1,0 +1,19 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+    <Script file="VersionHelper.lua"/>
+    <Script file="ResourceHelper.lua"/>
+	<Script file="ProductHelper.lua"/>
+    <Script file="TableHelper.lua"/>
+    <Script file="SoundHelper.lua"/>
+    <Script file="FarmHelper.lua"/>
+    <Script file="TsmHelper.lua"/>
+    <Script file="AuctionatorHelper.lua"/>
+    <Script file="OEHelper.lua"/>
+    <Script file="PriceSourceHelper.lua"/>
+    <Script file="ScrapHelper.lua"/>
+    <Script file="LocationHelper.lua"/>
+    <Script file="RoutesHelper.lua"/>
+    <Script file="ExportHelper.lua"/>
+    <Script file="TomTomHelper.lua"/>
+    <Script file="ExecutiveAssistantHelper.lua"/>
+</Ui>

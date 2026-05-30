@@ -1,0 +1,8 @@
+## Interface: 110100, 110105
+## Title: Warband Tax
+## Notes: Warband Tax
+## SavedVariablesPerCharacter: WarbandTaxDue, WarbandTaxToDate, WarbandTaxPercentage, WarbandQuietMode
+## Version: 0.0.7
+## Author: Zazuazee
+WarbandTax.lua
+WarbandTax.xml

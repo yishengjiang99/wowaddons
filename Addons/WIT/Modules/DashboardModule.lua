@@ -1,0 +1,40 @@
+local WIT, core = ...
+
+local data = { }
+
+core.DashboardModule = core.FarmResultModule('Dashboard', data, 'Dashboard')
+core.DashboardModule.ConfigKey = "Dashboard"
+core.DashboardModule.FilterByActivity = true
+core.DashboardModule.ShowFarmsWithoutActivity = true
+core.DashboardModule.ShowFarmsWithoutContent = true
+
+function core.DashboardModule.GetData()
+    local farms = {}
+    local ignoredIds = core.Config.GetUserIgnoredFarms()
+
+    if core.Config.GetModulesConfig().Dashboard.ShowCurrentContent then
+        for _, farm in pairs(core.Data.Results.Farms) do
+            if farm.Content == core.Config.CurrentContent and not core.TableHelper.IndexOf(ignoredIds, farm.Id) then
+                table.insert(farms, farm)
+            end
+        end
+    else
+        local dashboardFarms = core.Config.GetModulesConfig().Dashboard.Farms
+        local allFarms = core.TableHelper.Concat({}, core.Config.GetUserFarms())
+
+        for _, farm in pairs(core.Data.Results.Farms) do
+            table.insert(allFarms, farm)
+        end
+
+        for _, farm in pairs(allFarms) do
+            if dashboardFarms[farm.Id] and not core.TableHelper.IndexOf(ignoredIds, farm.Id) then
+                table.insert(farms, farm)
+            end
+        end
+    end
+
+    return farms
+end
+
+table.insert(core.Modules, core.DashboardModule)
+
