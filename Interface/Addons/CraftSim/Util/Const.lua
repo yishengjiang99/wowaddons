@@ -1131,8 +1131,8 @@ CraftSim.CONST.CRAFT_QUEUE_STATUS_TEXTURES = {
 }
 
 CraftSim.CONST.FONT_FILES = {
-    ROBOTO = 'Interface\\AddOns\\CraftSim\\Media\\Fonts\\Roboto-Regular.ttf',
-    MONOSPACE = 'Interface\\AddOns\\CraftSim\\Media\\Fonts\\SpaceMono-Regular.ttf',
+    ROBOTO = 'Interface\\Addons\\CraftSim\\Media\\Fonts\\Roboto-Regular.ttf',
+    MONOSPACE = 'Interface\\Addons\\CraftSim\\Media\\Fonts\\SpaceMono-Regular.ttf',
 }
 
 CraftSim.CONST.PATRON_ORDERS_KNOWLEDGE_REWARD_ITEMS = {
