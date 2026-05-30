@@ -25,6 +25,10 @@ function Spy:SetWindowTop(window)
 	if InCombatLockdown() then
 		return
 	end
+	if not window.Below then
+		window.Below = UIParent
+	end
+
 	local Check = window.Above
 
 	while Check ~= nil do
@@ -34,7 +38,9 @@ function Spy:SetWindowTop(window)
 		Check.Below = window.Below
 		window.Below = Check
 
-		Check.Below.Above = Check
+		if Check.Below then
+			Check.Below.Above = Check
+		end
 
 		Spy:SetLevel(Check, Check.Below:GetFrameLevel() + 10)
 		Check = window.Above
