@@ -255,18 +255,10 @@ function CraftSim.CONCENTRATION_TRACKER.UI.InitTrackerFrame()
             concentrationColumn.text = GGUI.Text {
                 parent = concentrationColumn, anchorPoints = { { anchorParent = concentrationColumn, anchorA = "CENTER", anchorB = "CENTER" } },
                 justifyOptions = { type = "H", align = "CENTER" }, scale = 1, fixedWidth = 70,
-                fontOptions = {
-                    fontFile = CraftSim.CONST.FONT_FILES.MONOSPACE,
-                    height = 12,
-                },
             }
             maxedColumn.text = GGUI.Text {
                 parent = maxedColumn, anchorPoints = { { anchorParent = maxedColumn, anchorA = "CENTER", anchorB = "CENTER" } },
                 justifyOptions = { type = "H", align = "CENTER" }, scale = 1, fixedWidth = 90,
-                fontOptions = {
-                    fontFile = CraftSim.CONST.FONT_FILES.MONOSPACE,
-                    height = 12,
-                },
             }
         end,
         selectionOptions = {

@@ -3076,11 +3076,6 @@ function CraftSim.CRAFTQ.UI:InitializeQuickAccessBar(frame)
                     anchor = "ANCHOR_TOP",
                     text = "",
                 },
-                fontOptions = {
-                    fontFile = CraftSim.CONST.FONT_FILES.ROBOTO,
-                    scale = 3,
-                    flags = "THICKOUTLINE",
-                },
                 borderOptions = {
                     colorRGBA = { 1, 1, 1, 1 },
                     borderSize = 10,
@@ -3093,11 +3088,6 @@ function CraftSim.CRAFTQ.UI:InitializeQuickAccessBar(frame)
                 tooltipOptions = {
                     anchor = "ANCHOR_TOP",
                     text = "",
-                },
-                fontOptions = {
-                    fontFile = CraftSim.CONST.FONT_FILES.ROBOTO,
-                    scale = 3,
-                    flags = "THICKOUTLINE",
                 },
                 borderOptions = {
                     colorRGBA = { 1, 1, 1, 1 },
