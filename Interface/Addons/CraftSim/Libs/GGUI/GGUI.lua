@@ -72,9 +72,9 @@ GGUI.CONST.HIGHLIGHTED_BLUE_ATLAS = "GarrMissionLocation-Maw-ButtonHighlight"
 GGUI.CONST.HIGHTLIGHTED_VERTICAL_EDGE_BLUE_ATLAS = "!editmode-actionbar-highlight-nineslice-edgeleft"
 
 local function SetFontIfAvailable(fontString, fontFile, height, flags)
-    if fontFile then
-        pcall(fontString.SetFont, fontString, fontFile, height, flags or "")
-    end
+    -- Custom font files can throw UI errors when WoW cannot resolve the asset.
+    -- Leave the existing font object in place instead of attempting to load them.
+    return
 end
 
 ---@class GGUI.AnchorPoint
